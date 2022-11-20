@@ -30,7 +30,7 @@ function verifyJWT(req, res, next) {
         }
         req.decoded = decoded;
         next();
-    })
+    });
 }
 
 async function run() {
@@ -39,6 +39,17 @@ async function run() {
         const bookingsCollection = client.db('doctorsPortal').collection('bookings');
         const usersCollection = client.db('doctorsPortal').collection('users');
         const doctorsCollection = client.db('doctorsPortal').collection('doctors');
+
+        //NOTE: make sure you use verifyAdmin after verifyJWT
+        const verifyAdmin = async (req, res, next) => {
+            const decodedEmail = req.decoded.email;
+            const query = { email: decodedEmail };
+            const user = await usersCollection.findOne(query);
+            if (user?.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
 
         // Use Aggregate to query multiple collection and then merge data
         app.get('/appointmentOptions', async (req, res) => {
@@ -105,9 +116,9 @@ async function run() {
             res.send(options);
         });
 
-        app.get('/appointmentSpecialty', async(req, res) => {
+        app.get('/appointmentSpecialty', async (req, res) => {
             const query = {}
-            const result = await appointmentOptionCollection.find(query).project({name: 1}).toArray();
+            const result = await appointmentOptionCollection.find(query).project({ name: 1 }).toArray();
             res.send(result);
         });
 
@@ -172,7 +183,7 @@ async function run() {
             const query = { email };
             const user = await usersCollection.findOne(query);
             res.send({ isAdmin: user?.role === 'admin' });
-        })
+        });
 
         app.post('/users', async (req, res) => {
             const user = req.body;
@@ -181,15 +192,7 @@ async function run() {
             res.send(result);
         });
 
-        app.put('/users/admin/:id', verifyJWT, async (req, res) => {
-            const decodedEmail = req.decoded.email;
-            const query = { email: decodedEmail };
-            const user = await usersCollection.findOne(query);
-
-            if (user?.role !== 'admin') {
-                return res.status(403).send({ message: 'forbidden access' })
-            }
-
+        app.put('/users/admin/:id', verifyJWT, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const filter = { _id: ObjectId(id) };
             const options = { upsert: true };
@@ -202,19 +205,26 @@ async function run() {
             res.send(result);
         });
 
-        app.get('/doctors', async(req, res) => {
+        app.get('/doctors', verifyJWT, verifyAdmin, async (req, res) => {
             const query = {};
             const doctors = await doctorsCollection.find(query).toArray();
             res.send(doctors);
-        })
+        });
 
-        app.post('/doctors', async(req, res) => {
+        app.post('/doctors', verifyJWT, verifyAdmin, async (req, res) => {
             const doctor = req.body;
             const result = await doctorsCollection.insertOne(doctor);
             res.send(result);
         });
 
+        app.delete('/doctors/:id', verifyJWT, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const filter = { _id: ObjectId(id) }
+            const result = await doctorsCollection.deleteOne(filter);
+            res.send(result);
+        });
     }
+
     finally {
 
     }
