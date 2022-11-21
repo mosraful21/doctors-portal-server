@@ -4,8 +4,9 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
 const { query } = require('express');
 require('dotenv').config();
-const port = process.env.PORT || 5000;
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY)
 
+const port = process.env.PORT || 5000;
 const app = express();
 
 // middleware
@@ -133,6 +134,7 @@ async function run() {
          * app.delete('/bookings/:id')
         */
 
+        // bookings server:---------------------------------
         app.get('/bookings', verifyJWT, async (req, res) => {
             const email = req.query.email;
             const decodedEmail = req.decoded.email;
@@ -144,6 +146,13 @@ async function run() {
             const query = { email: email };
             const bookings = await bookingsCollection.find(query).toArray();
             res.send(bookings);
+        });
+
+        app.get('/bookings/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const booking = await bookingsCollection.findOne(query);
+            res.send(booking);
         });
 
         app.post('/bookings', async (req, res) => {
@@ -163,6 +172,8 @@ async function run() {
             res.send(result);
         });
 
+
+        // jwt token create server:----------------------
         app.get('/jwt', async (req, res) => {
             const email = req.query.email;
             const query = { email: email };
@@ -174,6 +185,8 @@ async function run() {
             res.status(403).send({ accessToken: '' });
         });
 
+
+        // user server:----------------------------
         app.get('/users', async (req, res) => {
             const query = {};
             const users = await usersCollection.find(query).toArray();
@@ -208,20 +221,7 @@ async function run() {
         });
 
 
-        //temporary to update price field on appointment options
-        // app.get('/addPrice', async(req, res) => {
-        //     const filter = {};
-        //     const options = { upsert: true };
-        //     const updateDoc = {
-        //         $set: {
-        //             price: 99
-        //         }
-        //     }
-        //     const result = await appointmentOptionCollection.updateMany(filter, updateDoc, options);
-        //     res.send(result);
-        // });
-
-
+        // doctor server:------------------------------
         app.get('/doctors', verifyJWT, verifyAdmin, async (req, res) => {
             const query = {};
             const doctors = await doctorsCollection.find(query).toArray();
@@ -240,6 +240,38 @@ async function run() {
             const result = await doctorsCollection.deleteOne(filter);
             res.send(result);
         });
+
+
+        // payment server:----------------------
+        app.post('/create-payment-intent', async (req, res) => {
+            const booking = req.body;
+            const price = booking.price;
+            const amount = price * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                currency: 'usd',
+                amount: amount,
+                "payment_method_types": [
+                    "card"
+                ]
+            });
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            })
+        });
+
+
+        // temporary to update price field on appointment options:-----------
+        // app.get('/addPrice', async(req, res) => {
+        //     const filter = {};
+        //     const options = { upsert: true };
+        //     const updateDoc = {
+        //         $set: {
+        //             price: 99
+        //         }
+        //     }
+        //     const result = await appointmentOptionCollection.updateMany(filter, updateDoc, options);
+        //     res.send(result);
+        // });
     }
 
     finally {
