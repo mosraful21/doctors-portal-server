@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const nodemailer = require("nodemailer");
+const mg = require('nodemailer-mailgun-transport');
 const { query } = require('express');
 require('dotenv').config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY)
@@ -17,8 +19,50 @@ app.use(express.json());
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ntn7mgs.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
-function verifyJWT(req, res, next) {
+function sendBookingEmail(booking) {
+    const { email, treatment, appointmentDate, slot } = booking;
 
+    const auth = {
+        auth: {
+            api_key: process.env.EMAIL_SEND_KEY,
+            domain: process.env.EMAIL_SEND_DOMAIN
+        }
+    }
+
+    const transporter = nodemailer.createTransport(mg(auth));
+
+    // let transporter = nodemailer.createTransport({
+    //     host: 'smtp.sendgrid.net',
+    //     port: 587,
+    //     auth: {
+    //         user: "apikey",
+    //         pass: process.env.SENDGRID_API_KEY
+    //     }
+    //  });
+
+    transporter.sendMail({
+        from: "mosraful21@gmail.com", // verified sender email
+        to: email, // recipient email
+        subject: `Your appointment for ${treatment} is confirmed`, // Subject line
+        text: "Hello world!", // plain text body
+        html: `
+            <h3>Your appointment is confirmed</h3>
+            <div>
+                <p>Your appointment for treatment ${treatment}</p>
+                <p>Please visit us on ${appointmentDate} at ${slot}</p>
+                <p>Thanks form Doctor portal.</p>
+            </div>
+        `, // html body
+    }, function (error, info) {
+        if (error) {
+            console.log(error);
+        } else {
+            console.log('Email sent: ' + info.response);
+        }
+    });
+}
+
+function verifyJWT(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
         return res.status(401).send('unauthorized access');
@@ -170,6 +214,8 @@ async function run() {
                 return res.send({ acknowledged: false, message })
             }
             const result = await bookingsCollection.insertOne(booking);
+            // send email about appointment confirmation
+            sendBookingEmail(booking);
             res.send(result);
         });
 
@@ -264,7 +310,7 @@ async function run() {
             const payment = req.body;
             const result = await paymentsCollection.insertOne(payment);
             const id = payment.bookingId;
-            const filter = {_id: ObjectId(id)};
+            const filter = { _id: ObjectId(id) };
             const updateDoc = {
                 $set: {
                     paid: true,
